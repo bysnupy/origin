@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+  "os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -154,14 +155,22 @@ func (o NetworkOptions) RunNetwork(stopCh <-chan struct{}) error {
 		nodeConfig.ServingInfo.BindAddress = addr.HostPort(o.NodeArgs.ListenArg.ListenAddr.DefaultPort)
 	}
 	// do a local resolution of node config DNS IP, supports bootstrapping cases
+  // If NodeIP is configured, then DNSIP is NodeIP, or the interface IP of default gateway is configured.
+  // Otherwise, an IPv4 addresses in the hosts.
 	if nodeConfig.DNSIP == "0.0.0.0" {
 		glog.V(4).Infof("Defaulting to the DNSIP config to the node's IP")
 		nodeConfig.DNSIP = nodeConfig.NodeIP
 		// TODO: the Kubelet should do this defaulting (to the IP it recognizes)
 		if len(nodeConfig.DNSIP) == 0 {
-			if ip, err := cmdutil.DefaultLocalIP4(); err == nil {
-				nodeConfig.DNSIP = ip.String()
-			}
+      cmdStr := "ip route get to $(ip route list match 0.0.0.0/0 | awk '{print $3 }') | awk -F 'src' '{print $2}'| head -n1 | awk '{print $1}'"
+      ipCmd := exec.Command("bash", "-c", cmdStr)
+      if gwIp, err := ipCmd.CombbinedOutput(); err == nil {
+        nodeConfig.DNSIP = string(gwIp)
+      } else {
+			  if ip, err := cmdutil.DefaultLocalIP4(); err == nil {
+				  nodeConfig.DNSIP = ip.String()
+			  }
+      }
 		}
 	}
 
